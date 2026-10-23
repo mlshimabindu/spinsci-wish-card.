@@ -316,8 +316,8 @@ export async function drawWishImage(input: {
   context.fillStyle = BODY
   context.font = "30px \"Segoe UI\", sans-serif"
   for (const line of bodyLines) {
-    fillCentered(context, line, y, textWidth)
-    y += 46
+    if (line) fillCentered(context, line, y, textWidth)
+    y += line ? 46 : 24
   }
 
   y += 28
@@ -340,15 +340,34 @@ export async function drawWishImage(input: {
   return canvas
 }
 
-export async function copyWishImage(canvas: HTMLCanvasElement): Promise<void> {
-  if (!navigator.clipboard || typeof ClipboardItem === "undefined") {
-    throw new Error("Right-click the image and choose Copy image.")
-  }
-  const blob = new Promise<Blob>((resolve, reject) => {
+export function canvasToPng(canvas: HTMLCanvasElement): Promise<Blob> {
+  return new Promise((resolve, reject) => {
     canvas.toBlob((value) => {
       if (value) resolve(value)
-      else reject(new Error("The image could not be copied."))
+      else reject(new Error("The image could not be prepared."))
     }, "image/png")
   })
-  await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })])
+}
+
+export function wishFileName(kind: WishKind, name: string): string {
+  const who = name.trim().split(/\s+/)[0]?.toLowerCase().replace(/[^a-z0-9]+/g, "") || "team"
+  return `spinsci-${kind}-${who}.png`
+}
+
+export function saveWishImage(blob: Blob, fileName: string) {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement("a")
+  link.href = url
+  link.download = fileName
+  document.body.append(link)
+  link.click()
+  link.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 1500)
+}
+
+export function copyWishImage(blob: Blob): Promise<void> {
+  if (!navigator.clipboard || typeof ClipboardItem === "undefined" || !window.isSecureContext) {
+    return Promise.reject(new Error("This browser blocked copying the image."))
+  }
+  return navigator.clipboard.write([new ClipboardItem({ "image/png": blob })])
 }

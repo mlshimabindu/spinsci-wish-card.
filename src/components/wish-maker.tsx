@@ -7,13 +7,14 @@ import { Textarea } from "@/components/ui/textarea"
 import { composeTeamWish } from "@/lib/compose-wish"
 import { fileToDataUrl, isImageDataUrl } from "@/lib/images"
 import { COMPANY_LOGO, COMPANY_NAME } from "@/lib/types"
-import { WISH_KINDS, copyWishImage, drawWishImage, type WishKind } from "@/lib/wish-image"
+import { WISH_KINDS, canvasToPng, copyWishImage, drawWishImage, saveWishImage, wishFileName, type WishKind } from "@/lib/wish-image"
 
 const LOGO_KEY = "merriday-logo"
 
 export function WishMaker() {
   const formId = useId()
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const blobRef = useRef<Blob | null>(null)
   const [logo, setLogo] = useState(COMPANY_LOGO)
   const [photo, setPhoto] = useState<string | null>(null)
   const [name, setName] = useState("")
@@ -45,9 +46,11 @@ export function WishMaker() {
         headline: wish.headline,
         body: wish.body,
         signoff: wish.signoff,
-      }).then((canvas) => {
+      }).then(async (canvas) => {
         if (cancel) return
         canvasRef.current = canvas
+        blobRef.current = await canvasToPng(canvas)
+        if (cancel) return
         setPreview(canvas.toDataURL("image/png"))
       }).catch(() => {
         if (!cancel) setNotice("The wish image could not be drawn.")
@@ -77,25 +80,40 @@ export function WishMaker() {
     }
   }
 
-  async function copyImage() {
-    if (!message.trim()) {
-      setNotice("Write the wish before copying the image.")
+  function readyBlob(): Blob | null {
+    return blobRef.current
+  }
+
+  function saveImage() {
+    const blob = readyBlob()
+    if (!message.trim() || !blob) {
+      setNotice("The image is still being made.")
       return
     }
-    const canvas = canvasRef.current
-    if (!canvas) {
+    saveWishImage(blob, wishFileName(kind, name))
+    setNotice("Saved. Open the PNG, then copy the picture from there if paste is blocked.")
+  }
+
+  function copyImage() {
+    if (!message.trim()) {
+      setNotice("Write a short note before copying the image.")
+      return
+    }
+    const blob = readyBlob()
+    if (!blob) {
       setNotice("The image is still being made.")
       return
     }
     setCopying(true)
-    try {
-      await copyWishImage(canvas)
-      setNotice("Copied. Paste it into a chat, email, or document.")
-    } catch (caught) {
-      setNotice(caught instanceof Error ? caught.message : "Right-click the image and choose Copy image.")
-    } finally {
+    setNotice(null)
+    void copyWishImage(blob).then(() => {
+      setNotice("Copied. Paste it with Ctrl+V.")
+    }).catch(() => {
+      saveWishImage(blob, wishFileName(kind, name))
+      setNotice("Copy was blocked, so the image was saved. Open the PNG and copy the picture.")
+    }).finally(() => {
       setCopying(false)
-    }
+    })
   }
 
   return (
@@ -196,12 +214,12 @@ export function WishMaker() {
                 }}
               />
             </label>
-            <p className="text-xs text-muted-foreground">{message.trim().length} / 400. A short note is expanded. A longer note stays as you wrote it.</p>
+            <p className="text-xs text-muted-foreground">{message.trim().length} / 400. Capitals and punctuation are corrected. A short note gets the closing for that event.</p>
             {message.trim() ? (
               <div className="grid gap-2 rounded-2xl bg-card p-4 ring-1 ring-border">
                 <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Message on the card</p>
                 <p className="text-lg font-semibold text-foreground">{wish.headline}</p>
-                <p className="text-sm leading-6">{wish.body}</p>
+                <p className="text-sm leading-6 whitespace-pre-wrap">{wish.body}</p>
                 <p className="text-sm font-medium">{wish.signoff}</p>
               </div>
             ) : (
@@ -218,11 +236,16 @@ export function WishMaker() {
               The wish image will appear here.
             </div>
           )}
-          <Button type="button" className="h-11 px-5" onClick={() => void copyImage()} disabled={copying || !message.trim()}>
-            {copying ? "Copying…" : "Copy image"}
-          </Button>
+          <div className="flex flex-wrap justify-center gap-2">
+            <Button type="button" className="h-11 px-5" onClick={copyImage} disabled={copying || !message.trim()}>
+              {copying ? "Copying…" : "Copy image"}
+            </Button>
+            <Button type="button" variant="outline" className="h-11 bg-card px-5" onClick={saveImage} disabled={!message.trim() || !preview}>
+              Save image
+            </Button>
+          </div>
           <p className="max-w-sm text-center text-sm text-muted-foreground">
-            Paste with Ctrl+V. You can also right-click the image and choose Copy image.
+            Paste with Ctrl+V. If the browser blocks copy, use Save image and copy the PNG from your downloads.
           </p>
           {notice ? <p className="text-sm" role="status">{notice}</p> : null}
         </section>
