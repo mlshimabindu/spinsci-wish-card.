@@ -365,9 +365,44 @@ export function saveWishImage(blob: Blob, fileName: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1500)
 }
 
-export function copyWishImage(blob: Blob): Promise<void> {
+export function copyWishImage(blob: Blob, src: string): Promise<void> {
   if (!navigator.clipboard || typeof ClipboardItem === "undefined" || !window.isSecureContext) {
     return Promise.reject(new Error("This browser blocked copying the image."))
   }
-  return navigator.clipboard.write([new ClipboardItem({ "image/png": blob })])
+  const html = new Blob([`<img src="${src}" alt="">`], { type: "text/html" })
+  return navigator.clipboard.write([
+    new ClipboardItem({
+      "image/png": blob,
+      "text/html": html,
+    }),
+  ])
+}
+
+export function copyWishImageFallback(src: string): boolean {
+  const holder = document.createElement("div")
+  holder.contentEditable = "true"
+  holder.style.position = "fixed"
+  holder.style.left = "0"
+  holder.style.top = "0"
+  holder.style.opacity = "0"
+  holder.style.pointerEvents = "none"
+  const image = document.createElement("img")
+  image.src = src
+  image.alt = ""
+  holder.append(image)
+  document.body.append(holder)
+  const range = document.createRange()
+  range.selectNode(image)
+  const selection = window.getSelection()
+  selection?.removeAllRanges()
+  selection?.addRange(range)
+  let copied = false
+  try {
+    copied = document.execCommand("copy")
+  } catch {
+    copied = false
+  }
+  selection?.removeAllRanges()
+  holder.remove()
+  return copied
 }

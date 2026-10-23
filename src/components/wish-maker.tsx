@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { composeTeamWish } from "@/lib/compose-wish"
 import { fileToDataUrl, isImageDataUrl } from "@/lib/images"
 import { COMPANY_LOGO, COMPANY_NAME } from "@/lib/types"
-import { WISH_KINDS, canvasToPng, copyWishImage, drawWishImage, saveWishImage, wishFileName, type WishKind } from "@/lib/wish-image"
+import { WISH_KINDS, canvasToPng, copyWishImage, copyWishImageFallback, drawWishImage, saveWishImage, wishFileName, type WishKind } from "@/lib/wish-image"
 
 const LOGO_KEY = "merriday-logo"
 
@@ -100,17 +100,32 @@ export function WishMaker() {
       return
     }
     const blob = readyBlob()
-    if (!blob) {
+    const src = preview
+    if (!blob || !src) {
       setNotice("The image is still being made.")
+      return
+    }
+    const clipboardMissing = !navigator.clipboard || typeof ClipboardItem === "undefined" || !window.isSecureContext
+    if (clipboardMissing) {
+      const copied = copyWishImageFallback(src)
+      setNotice(copied ? "Copied. Paste it with Ctrl+V." : "Right-click the picture and choose Copy image.")
+      return
+    }
+    let pending: Promise<void>
+    try {
+      pending = copyWishImage(blob, src)
+    } catch {
+      const copied = copyWishImageFallback(src)
+      setNotice(copied ? "Copied. Paste it with Ctrl+V." : "Right-click the picture and choose Copy image.")
       return
     }
     setCopying(true)
     setNotice(null)
-    void copyWishImage(blob).then(() => {
+    void pending.then(() => {
       setNotice("Copied. Paste it with Ctrl+V.")
     }).catch(() => {
-      saveWishImage(blob, wishFileName(kind, name))
-      setNotice("Copy was blocked, so the image was saved. Open the PNG and copy the picture.")
+      const copied = copyWishImageFallback(src)
+      setNotice(copied ? "Copied. Paste it with Ctrl+V." : "Right-click the picture and choose Copy image.")
     }).finally(() => {
       setCopying(false)
     })
@@ -245,7 +260,7 @@ export function WishMaker() {
             </Button>
           </div>
           <p className="max-w-sm text-center text-sm text-muted-foreground">
-            Paste with Ctrl+V. If the browser blocks copy, use Save image and copy the PNG from your downloads.
+            Paste with Ctrl+V into a mail, document, or chat. You can also right-click the picture and choose Copy image.
           </p>
           {notice ? <p className="text-sm" role="status">{notice}</p> : null}
         </section>
